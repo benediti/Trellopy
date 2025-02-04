@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import io
 import os
 
 def padronizar_nomes_colunas(df):
@@ -77,37 +78,98 @@ def processar_planilha(uploaded_file):
 
     return pd.DataFrame(registros), faltas_data, list(set(colunas_exportadas))
 
-def main():
-    st.title("Automação Trello")
-    st.write("Faça upload do arquivo Excel para processar")
+def save_files(trello_data, faltas_atualizadas, save_path):
+    try:
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+            
+        trello_file = os.path.join(save_path, f"Trello_Formatado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        faltas_file = os.path.join(save_path, f"Faltas_Atualizadas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
+        
+        trello_data.to_excel(trello_file, index=False)
+        faltas_atualizadas.to_excel(faltas_file, index=False)
+        return trello_file, faltas_file
+    except Exception as e:
+        st.error(f"Erro ao salvar arquivos: {e}")
+        return None, None
 
-    uploaded_file = st.file_uploader("Escolha um arquivo Excel", type=['xlsx'])
+def main():
+    st.set_page_config(page_title="Automação Trello", layout="wide")
+    
+    st.title("Automação Trello")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        save_path = st.text_input(
+            "Pasta para salvar arquivos:",
+            value="C:/projeto_atendimento/Pronto_para_Trello",
+            help="Digite o caminho completo da pasta onde deseja salvar os arquivos"
+        )
+    
+    with col2:
+        uploaded_file = st.file_uploader(
+            "Escolha um arquivo Excel",
+            type=['xlsx'],
+            help="Selecione o arquivo Excel com os dados para processamento"
+        )
 
     if uploaded_file is not None:
-        if st.button("Processar Arquivo"):
-            try:
-                trello_data, faltas_atualizadas, colunas_exportadas = processar_planilha(uploaded_file)
-                
-                st.success("Arquivo processado com sucesso!")
-                st.write("Colunas exportadas:", ", ".join(colunas_exportadas))
+        if st.button("Processar Arquivo", type="primary"):
+            with st.spinner("Processando arquivo..."):
+                try:
+                    trello_data, faltas_atualizadas, colunas_exportadas = processar_planilha(uploaded_file)
+                    
+                    # Salvar arquivos localmente
+                    trello_file, faltas_file = save_files(trello_data, faltas_atualizadas, save_path)
+                    
+                    if trello_file and faltas_file:
+                        st.success("✅ Arquivos salvos com sucesso!")
+                        st.info(f"📁 Local dos arquivos:\n- {trello_file}\n- {faltas_file}")
+                        
+                        st.write("📊 Colunas exportadas:", ", ".join(colunas_exportadas))
+                        
+                        # Preparar buffers para download
+                        buffer_trello = io.BytesIO()
+                        trello_data.to_excel(buffer_trello, index=False, engine='openpyxl')
+                        buffer_trello.seek(0)
 
-                # Download dos arquivos processados
-                st.download_button(
-                    label="Baixar arquivo Trello formatado",
-                    data=trello_data.to_excel(index=False, engine='openpyxl'),
-                    file_name=f"Trello_Formatado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                        buffer_faltas = io.BytesIO()
+                        faltas_atualizadas.to_excel(buffer_faltas, index=False, engine='openpyxl')
+                        buffer_faltas.seek(0)
 
-                st.download_button(
-                    label="Baixar planilha atualizada",
-                    data=faltas_atualizadas.to_excel(index=False, engine='openpyxl'),
-                    file_name=f"Faltas_Atualizadas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.download_button(
+                                "⬇️ Download arquivo Trello",
+                                data=buffer_trello,
+                                file_name=f"Trello_Formatado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                        
+                        with col2:
+                            st.download_button(
+                                "⬇️ Download planilha atualizada",
+                                data=buffer_faltas,
+                                file_name=f"Faltas_Atualizadas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                            
+                except Exception as e:
+                    st.error(f"❌ Erro ao processar arquivo: {str(e)}")
 
-            except Exception as e:
-                st.error(f"Erro ao processar arquivo: {str(e)}")
+    st.sidebar.header("Sobre")
+    st.sidebar.info(
+        """
+        Este aplicativo processa planilhas de faltas e gera arquivos formatados para o Trello.
+        
+        Como usar:
+        1. Digite o caminho da pasta para salvar os arquivos
+        2. Faça upload do arquivo Excel
+        3. Clique em "Processar Arquivo"
+        4. Faça download dos arquivos processados
+        """
+    )
 
 if __name__ == "__main__":
     main()
